@@ -17,8 +17,6 @@ En la terminal de Claude Code:
 
 Responde `y` para agregar el marketplace y elige el alcance de la instalación.
 
-El repositorio es privado: necesitas una invitación y tener GitHub configurado en tu computador.
-
 ## Uso
 
 Abre la vista con el comando `/roadmap`.
