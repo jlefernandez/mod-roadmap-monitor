@@ -1,0 +1,5 @@
+{
+  "name": "mod-roadmap-monitor",
+  "owner": { "name": "jlefernandez" },
+  "plugins": [{ "name": "roadmap-monitor", "source": "./" }]
+}

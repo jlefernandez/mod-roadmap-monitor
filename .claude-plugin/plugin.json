@@ -1,0 +1,6 @@
+{
+  "name": "roadmap-monitor",
+  "version": "0.1.0",
+  "description": "Vista lateral: roadmap del proyecto con avances arriba y monitor de tareas, agentes y tokens abajo",
+  "types": "./types/index.d.ts"
+}
