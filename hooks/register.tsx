@@ -592,7 +592,9 @@ export const register: Register = on => {
         ahora,
       }))
     } else {
-      await update($, monitorAtom, m => ({ ...m, turno: { inicio: ahora, fin: null, tokens: 0 }, ahora }))
+      const uso = await $.session.usage().catch(() => null)
+      const sesion = sesionDe(uso)
+      await update($, monitorAtom, m => ({ ...m, turno: { inicio: ahora, fin: null, tokens: 0, usdInicio: sesion.usd }, sesion, ahora }))
     }
     return next(e)
   })

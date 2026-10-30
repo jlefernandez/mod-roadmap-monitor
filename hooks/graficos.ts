@@ -197,6 +197,17 @@ export function anillo(pct: number, color: string, tam = 44): string {
 </svg>`
 }
 
+/**
+ * Número grande, más que el mayor tamaño de Text. Va dibujado porque un SVG no
+ * conoce el tema del editor: el color debe verse en tema claro y oscuro.
+ */
+export function numero(texto: string, color: string, tam = 22): { source: string; ancho: number; alto: number } {
+  const ancho = Math.ceil(texto.length * tam * 0.62)
+  const alto = Math.ceil(tam * 1.2)
+  const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${ancho} ${alto}" width="${ancho}" height="${alto}"><text x="0" y="${tam}" font-family="'Segoe UI',-apple-system,sans-serif" font-size="${tam}" font-weight="700" fill="${color}">${texto}</text></svg>`
+  return { source, ancho, alto }
+}
+
 /** Avatar de texto para la terminal, con la cara de la mascota; `fase` alterna en cada tick. */
 export function avatarTexto(trabajando: boolean, fase: number): string {
   if (!trabajando) return '▐- -▌ᶻ'

@@ -1,7 +1,7 @@
 import type { ElementTable, RenderSurface } from 'claude-code'
 
 import type { EstadoItem, Fuente, Monitor, Roadmap, Todo } from '../types'
-import { COLOR, anillo, avatar, avatarTexto, barraApilada, barraSvg, colorDe } from './graficos'
+import { COLOR, anillo, avatar, avatarTexto, barraApilada, barraSvg, colorDe, numero } from './graficos'
 import { barra, etapaActual, fmtDur, fmtTok, limitar, nombreModelo, progresoEtapa } from './util'
 
 export type Datos = {
@@ -56,7 +56,8 @@ type Fila = {
 
 export function vista(t: ElementTable, d: Datos) {
   const { Box, Text } = t
-  const Svg = 'Svg' in t ? t.Svg : null
+  // Por superficie: la tabla de la terminal también puede traer Svg, sin dibujarlo.
+  const Svg = d.surface !== 'terminal' && 'Svg' in t ? t.Svg : null
   const grafica = Svg !== null
   const { r, m } = d
 
@@ -88,6 +89,50 @@ export function vista(t: ElementTable, d: Datos) {
   // ================= roadmap =================
   const etapa = etapaActual(r)
   const celdasBarra = limitar(Math.floor(d.ancho / 5), 4, 12)
+  const anchoBarraCard = limitar(Math.round(px * 0.3), 40, 120)
+
+  const todos = m.todos.main ?? []
+  const hechas = todos.filter(x => x.status === 'completed').length
+  const visibles = [...todos.filter(x => x.status !== 'completed'), ...todos.filter(x => x.status === 'completed')].slice(0, grafica ? 8 : 5)
+  const tareas = (
+    <Box flexDirection="column">
+      <Box flexDirection="row" alignItems="center" gap={1} marginTop={grafica ? 1 : 0}>
+        <Box flexGrow={1}>
+          <Text size="caption" weight="semibold" dimColor>
+            TAREAS
+          </Text>
+        </Box>
+        {todos.length > 0 ? Barra((hechas / todos.length) * 100, COLOR.exito, 'success', anchoBarraCard, celdasBarra, 3) : null}
+        {todos.length > 0 ? (
+          <Text size="caption" dimColor tabular>
+            {hechas}/{todos.length}
+          </Text>
+        ) : null}
+      </Box>
+      {todos.length === 0 ? <Text dimColor>Sin tareas.</Text> : null}
+      {visibles.map(x => {
+        const g = TAREA[x.status]
+        const tok = m.tokensTarea[`main|${x.content}`] ?? 0
+        return (
+          <Box flexDirection="row" alignItems="center" gap={grafica ? 1 : 0}>
+            <Text color={g.tema}>{g.glifo} </Text>
+            <Box flexGrow={1} flexShrink={1}>
+              <Text wrap="truncate-end" dimColor={x.status === 'completed'} weight={x.status === 'in_progress' ? 'semibold' : 'regular'}>
+                {x.status === 'in_progress' ? x.activeForm : x.content}
+              </Text>
+            </Box>
+            {tok > 0 ? (
+              <Text size="caption" dimColor tabular>
+                {' '}
+                {fmtTok(tok)}
+              </Text>
+            ) : null}
+          </Box>
+        )
+      })}
+      {todos.length > visibles.length ? <Text dimColor>+{todos.length - visibles.length} más</Text> : null}
+    </Box>
+  )
 
   // De dónde sale el roadmap y cómo va su lectura.
   const f = d.fuente
@@ -123,6 +168,7 @@ export function vista(t: ElementTable, d: Datos) {
           ? 'Leyendo el roadmap…'
           : 'Sin roadmap: crea ROADMAP.md o docs/roadmap.md, aprueba un plan, o pídele a Claude que lo defina.'}
       </Text>
+      {tareas}
     </Box>
   ) : (
     (() => {
@@ -282,6 +328,7 @@ export function vista(t: ElementTable, d: Datos) {
           {Seccion('Etapa actual')}
           {cabecera}
           {items}
+          {tareas}
         </Box>
       )
     })()
@@ -290,7 +337,6 @@ export function vista(t: ElementTable, d: Datos) {
   // ================= monitor =================
   const turnoVivo = m.turno !== null && m.turno.fin === null
   const durTurno = m.turno ? (m.turno.fin ?? ahora) - m.turno.inicio : 0
-  const todos = m.todos.main ?? []
   const enCurso = todos.find(x => x.status === 'in_progress')
 
   const actividad = m.actividad ?? {}
@@ -337,65 +383,61 @@ export function vista(t: ElementTable, d: Datos) {
   ]
   // Las que trabajan primero; Claude encabeza su grupo.
   filas.sort((a, b) => Number(b.trabajando) - Number(a.trabajando))
-  const activos = filas.filter(f => f.trabajando).length
 
-  // Con suscripción la API informa límites de uso: eso es lo que se consume de
-  // verdad. El costo en dólares (precio de lista, como /cost) queda de referencia.
-  const limites = m.sesion.limites ?? []
-  const NOMBRE_LIMITE: Record<string, string> = { five_hour: 'Límite 5 h', seven_day: 'Semana', spend_limit: 'Gasto' }
-  const usd = m.sesion.usd !== null ? `$${m.sesion.usd.toFixed(2)}` : null
+  // El costo es una estimación a precio de lista (como /cost): con suscripción
+  // la sesión informa límites de uso y ese monto no es lo que se cobra.
+  const costo = (usd: number | null) => (usd !== null ? `$${usd.toFixed(2)}` : '—')
+  const usdSesion = m.sesion.usd
+  const usdInicio = m.turno?.usdInicio ?? null
+  const usdTurno = usdSesion !== null && usdInicio !== null ? Math.max(0, usdSesion - usdInicio) : null
+  const notaCosto = (m.sesion.limites ?? []).length > 0 ? '≈ API' : undefined
 
-  const tiles: { etiqueta: string; valor: string; color?: string; sub?: string }[] = [
-    { etiqueta: turnoVivo ? 'Turno ▶' : 'Turno', valor: m.turno ? fmtDur(durTurno) : '—', color: turnoVivo ? 'claude' : undefined },
+  const Grande = (texto: string) => {
+    if (!Svg) return null
+    const n = numero(texto, COLOR.acento)
+    return <Svg source={n.source} alt={texto} width={n.ancho} height={n.alto} />
+  }
+
+  const tiles: { etiqueta: string; valor: string; sub?: string }[] = [
+    { etiqueta: turnoVivo ? 'Turno ▶' : 'Turno', valor: m.turno ? fmtDur(durTurno) : '—' },
     { etiqueta: 'Tokens turno', valor: m.turno ? fmtTok(m.turno.tokens) : '—' },
-    ...(limites.length > 0
-      ? limites.map(l => ({
-          etiqueta: NOMBRE_LIMITE[l.tipo] ?? l.tipo,
-          valor: `${Math.round(l.pct)}%`,
-          color: l.pct >= 95 ? 'error' : l.pct >= 80 ? 'warning' : undefined,
-          sub: l.reinicio && l.reinicio > ahora ? `reinicia en ${fmtDur(l.reinicio - ahora).replace(/ \d+s$/, '')}` : undefined,
-        }))
-      : [{ etiqueta: 'Costo API', valor: usd ?? '—' }]),
-    { etiqueta: 'Contexto', valor: m.sesion.contexto !== null ? `${m.sesion.contexto}%` : '—' },
+    { etiqueta: 'Costo turno', valor: costo(usdTurno), sub: notaCosto },
+    { etiqueta: 'Costo sesión', valor: costo(usdSesion), sub: notaCosto },
   ]
-  const notaCosto = limites.length > 0 && usd ? `≈ ${usd} equivalente API (no es tu cobro: usas suscripción)` : null
 
   const estadisticas = grafica ? (
-    <Box flexDirection="column">
-      <Box flexDirection="row" alignItems="center" flexWrap="wrap" gap={1}>
-        {tiles.map(x => (
-          <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1} flexGrow={1} minWidth={9}>
-            <Text size="caption" dimColor>
-              {x.etiqueta}
-            </Text>
-            <Text weight="bold" tabular color={x.color}>
-              {x.valor}
-            </Text>
+    // Siempre una fila (nowrap explícito: VS Code envuelve si no se indica). Mismo
+    // ancho: parten de un porcentaje que deja sitio a los espacios y crecen por
+    // igual. Mismo alto: stretch, tengan o no segunda línea.
+    <Box flexDirection="row" flexWrap="nowrap" alignItems="stretch" gap={1}>
+      {tiles.map(x => (
+        <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1} width={`${80 / tiles.length}%`} flexGrow={1} flexShrink={1} minWidth={0}>
+          <Text size="caption" dimColor>
+            {x.etiqueta}
+          </Text>
+          <Box flexDirection="row" alignItems="flex-end" gap={1}>
+            {Grande(x.valor)}
             {x.sub ? (
               <Text size="caption" dimColor tabular>
                 {x.sub}
               </Text>
             ) : null}
           </Box>
-        ))}
-      </Box>
-      {notaCosto ? (
-        <Text size="caption" dimColor wrap="truncate-end">
-          {notaCosto}
-        </Text>
-      ) : null}
+        </Box>
+      ))}
     </Box>
   ) : (
-    <Text wrap="truncate-end" color={turnoVivo ? 'claude' : undefined}>
+    // Cada dato aparte: en una sola línea los últimos se cortarían en un pane angosto.
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+      {m.turno === null ? <Text dimColor>sin actividad</Text> : null}
       {tiles
         .filter(x => x.valor !== '—')
-        .map(x => `${x.etiqueta.replace(' ▶', '')} ${x.valor}`)
-        .join(' · ') || 'sin actividad'}
-      {notaCosto ? <Text dimColor> · {`≈ ${usd} API`}</Text> : null}
-    </Text>
+        .map(x => (
+          <Text color={turnoVivo ? 'claude' : undefined}>{`${x.etiqueta.replace(' ▶', '')} ${x.valor}${x.sub ? ` ${x.sub}` : ''}`}</Text>
+        ))}
+    </Box>
   )
 
-  const anchoBarraCard = limitar(Math.round(px * 0.3), 40, 120)
   // Aire vertical de unos 4 px (el padding de VS Code va en líneas enteras).
   const aire = Svg ? (
     <Svg source={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 4" width="1" height="4"></svg>'} alt="" width={1} height={4} />
@@ -491,47 +533,9 @@ export function vista(t: ElementTable, d: Datos) {
     )
   }
 
-  const agentes = <Box flexDirection="column">{filas.map(card)}</Box>
-
-  const hechas = todos.filter(x => x.status === 'completed').length
-  const visibles = [...todos.filter(x => x.status !== 'completed'), ...todos.filter(x => x.status === 'completed')].slice(0, grafica ? 8 : 5)
-  const tareas = (
-    <Box flexDirection="column">
-      <Box flexDirection="row" alignItems="center" gap={1} marginTop={grafica ? 1 : 0}>
-        <Box flexGrow={1}>
-          <Text size="caption" weight="semibold" dimColor>
-            TAREAS
-          </Text>
-        </Box>
-        {todos.length > 0 ? Barra((hechas / todos.length) * 100, COLOR.exito, 'success', anchoBarraCard, celdasBarra, 3) : null}
-        {todos.length > 0 ? (
-          <Text size="caption" dimColor tabular>
-            {hechas}/{todos.length}
-          </Text>
-        ) : null}
-      </Box>
-      {todos.length === 0 ? <Text dimColor>Sin tareas.</Text> : null}
-      {visibles.map(x => {
-        const g = TAREA[x.status]
-        const tok = m.tokensTarea[`main|${x.content}`] ?? 0
-        return (
-          <Box flexDirection="row" alignItems="center" gap={grafica ? 1 : 0}>
-            <Text color={g.tema}>{g.glifo} </Text>
-            <Box flexGrow={1} flexShrink={1}>
-              <Text wrap="truncate-end" dimColor={x.status === 'completed'} weight={x.status === 'in_progress' ? 'semibold' : 'regular'}>
-                {x.status === 'in_progress' ? x.activeForm : x.content}
-              </Text>
-            </Box>
-            {tok > 0 ? (
-              <Text size="caption" dimColor tabular>
-                {' '}
-                {fmtTok(tok)}
-              </Text>
-            ) : null}
-          </Box>
-        )
-      })}
-      {todos.length > visibles.length ? <Text dimColor>+{todos.length - visibles.length} más</Text> : null}
+  const agentes = (
+    <Box flexDirection="column" marginTop={grafica ? 1 : 0}>
+      {filas.map(card)}
     </Box>
   )
 
@@ -540,12 +544,10 @@ export function vista(t: ElementTable, d: Datos) {
     .sort((a, b) => b.tokens - a.tokens)
     .slice(0, 5)
   const maxRep = reparto[0]?.tokens ?? 1
-  const totalRep = reparto.reduce((s, f) => s + f.tokens, 0)
   const tokens =
     reparto.length === 0 ? null : Svg ? (
       // Una sola barra apilada con su leyenda: el reparto de un vistazo.
-      <Box flexDirection="column">
-        {Seccion('Tokens por agente', `${fmtTok(totalRep)} en total`)}
+      <Box flexDirection="column" marginTop={1}>
         <Svg
           source={barraApilada(
             reparto.map(f => ({ valor: f.tokens, color: colorDe(f.clave === 'main' ? 'claude' : f.tipo) })),
@@ -567,7 +569,6 @@ export function vista(t: ElementTable, d: Datos) {
       </Box>
     ) : (
       <Box flexDirection="column">
-        {Seccion('Tokens por agente')}
         {reparto.map(f => (
           <Box flexDirection="row" alignItems="center" gap={grafica ? 1 : 0}>
             <Box width={12}>
@@ -589,12 +590,9 @@ export function vista(t: ElementTable, d: Datos) {
 
   const monitor = (
     <Box flexDirection="column">
-      {Seccion('Monitor', activos > 0 ? `${activos} trabajando` : 'en reposo')}
       {estadisticas}
-      {Seccion('Agentes', `${filas.length}`)}
-      {agentes}
-      {tareas}
       {tokens}
+      {agentes}
     </Box>
   )
 

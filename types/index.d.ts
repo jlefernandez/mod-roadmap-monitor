@@ -45,7 +45,8 @@ export type Monitor = {
   /** Modelo y esfuerzo del último paso de cada loop ('main' o agentId). */
   modelos?: Record<string, { modelo: string; esfuerzo: string | null }>
   tokensMain: number
-  turno: { inicio: number; fin: number | null; tokens: number } | null
+  /** `usdInicio`: costo de la sesión al empezar el turno, para sacar el del turno. */
+  turno: { inicio: number; fin: number | null; tokens: number; usdInicio?: number | null } | null
   sesion: {
     /** Costo a precio de lista de la API (lo que muestra /cost). */
     usd: number | null

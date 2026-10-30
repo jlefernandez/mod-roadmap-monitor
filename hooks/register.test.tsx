@@ -24,6 +24,8 @@ type Mundo = {
   /** Prompts que recibió Haiku. */
   lecturas: string[]
   reloj: ReturnType<typeof mock.clock>
+  /** Costo acumulado de la sesión que informa el motor. */
+  costo: { usd: number }
 }
 
 const RESPUESTA_HAIKU = JSON.stringify({
@@ -45,6 +47,7 @@ function motor(on: On, opciones: { suscripcion?: boolean; nombreAgente?: string 
   const store = new Map<string, unknown>()
   const archivos = new Map<string, { texto: string; mtime: number }>()
   const lecturas: string[] = []
+  const costo = { usd: 1.5 }
   on('store.get', (_, e) => ({ value: store.get(e.key) }))
   on('store.set', (_, e) => {
     store.set(e.key, e.value)
@@ -90,7 +93,7 @@ function motor(on: On, opciones: { suscripcion?: boolean; nombreAgente?: string 
             { kind: 'seven_day', percentUsed: 85 },
           ]
         : [],
-      cost: { usd: 1.5 },
+      cost: { usd: costo.usd },
     },
   }))
   on('agent.list', () => ({
@@ -100,7 +103,7 @@ function motor(on: On, opciones: { suscripcion?: boolean; nombreAgente?: string 
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('tool.call', () => ({ result: {} }))
-  return { store, archivos, lecturas, reloj }
+  return { store, archivos, lecturas, reloj, costo }
 }
 
 function paso(tokens: number) {
@@ -201,7 +204,6 @@ test('un sub-agente aparece corriendo con sus tokens', async ($, on) => {
 
   for (const surface of ['terminal', 'vscode'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Text', text: /1 trabajando/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Explore/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /800/ })).toBeDefined()
     // La card dice el modelo, su tarea y qué está haciendo ahora.
@@ -213,7 +215,7 @@ test('un sub-agente aparece corriendo con sus tokens', async ($, on) => {
   // Al terminar, el agente pasa a dormir.
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'ta', reason: 'answer', agentId: 'ag1' })
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect(await ui.find({ type: 'Text', text: /0 trabajando|en reposo/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Buscando «asistente»/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -251,32 +253,51 @@ test('detecta docs/roadmap.md del repo, lo lee con Haiku una sola vez y activa e
   expect(guardado.itemActivo).toBe('graficos-y-widgets')
 })
 
-test('con suscripción muestra los límites de uso y el costo solo como referencia', async ($, on) => {
+test('con suscripción el costo se aclara como equivalente de la API', async ($, on) => {
   motor(on, { suscripcion: true })
   await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
   await $.turn.start({ text: 'hola', turnId: 't' })
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect(await ui.find({ type: 'Text', text: /Límite 5 h/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^42%$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /reinicia en 2h/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Semana/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /equivalente API/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Costo API/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Costo sesión/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^≈ API$/ })).toBeDefined()
+  await ui.unmount()
+
+  // En VS Code el número va dibujado; en la terminal se comprueba el valor.
+  const terminal = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await terminal.find({ type: 'Text', text: /Costo sesión \$1\.50 ≈ API/ })).toBeDefined()
+  await terminal.unmount()
+})
+
+test('el costo del turno es lo que subió el de la sesión durante el turno', async ($, on) => {
+  const w = motor(on)
+  await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
+  w.costo.usd = 2
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  w.costo.usd = 2.75
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Costo turno \$0\.75/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Costo sesión \$2\.75/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('sin suscripción muestra el costo de la API', async ($, on) => {
+test('el monitor solo muestra turno, tokens y costo, sin títulos de bloque', async ($, on) => {
   motor(on)
   await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
   await $.turn.start({ text: 'hola', turnId: 't' })
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect(await ui.find({ type: 'Text', text: /Costo API/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /\$1\.50/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Límite/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Turno/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Tokens turno/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Costo sesión/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /≈ API/ })).toBeUndefined()
+  for (const fuera of [/Contexto/, /Límite/, /^MONITOR$/, /^AGENTES$/, /TOKENS POR AGENTE/]) {
+    expect(await ui.find({ type: 'Text', text: fuera })).toBeUndefined()
+  }
   await ui.unmount()
 })
 
