@@ -202,7 +202,8 @@ export function anillo(pct: number, color: string, tam = 44): string {
  * conoce el tema del editor: el color debe verse en tema claro y oscuro.
  */
 export function numero(texto: string, color: string, tam = 22): { source: string; ancho: number; alto: number } {
-  const ancho = Math.ceil(texto.length * tam * 0.62)
+  // Ancho ajustado al texto, para que el dato de al lado quede pegado al número.
+  const ancho = Math.ceil([...texto].reduce((s, c) => s + (c === '.' || c === ' ' ? 0.3 : c === 'm' ? 0.9 : 0.57), 0) * tam)
   const alto = Math.ceil(tam * 1.2)
   const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${ancho} ${alto}" width="${ancho}" height="${alto}"><text x="0" y="${tam}" font-family="'Segoe UI',-apple-system,sans-serif" font-size="${tam}" font-weight="700" fill="${color}">${texto}</text></svg>`
   return { source, ancho, alto }

@@ -22,14 +22,6 @@ const ESTADO: Record<EstadoItem, { glifo: string; tema: string; svg: string; nom
   bloqueado: { glifo: '✕', tema: 'error', svg: COLOR.error, nombre: 'bloqueado' },
 }
 
-/**
- * Línea separadora que ocupa todo el ancho disponible: sin `width`, el Svg toma
- * el ancho de su espacio (el SVG es más ancho que cualquier pane) y, con
- * `preserveAspectRatio="none"` y `height={1}`, se estira sin perder el grosor.
- * Así deja el mismo margen a ambos lados, el padding del contenedor.
- */
-const LINEA = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4000 1" width="4000" height="1" preserveAspectRatio="none"><rect width="4000" height="1" fill="${COLOR.pista}"/></svg>`
-
 const TAREA: Record<Todo['status'], { glifo: string; tema: string }> = {
   completed: { glifo: '✓', tema: 'success' },
   in_progress: { glifo: '◐', tema: 'claude' },
@@ -392,6 +384,11 @@ export function vista(t: ElementTable, d: Datos) {
   const usdTurno = usdSesion !== null && usdInicio !== null ? Math.max(0, usdSesion - usdInicio) : null
   const notaCosto = (m.sesion.limites ?? []).length > 0 ? '≈ API' : undefined
 
+  // Aire vertical de unos 4 px (el padding de VS Code va en líneas enteras).
+  const aire = Svg ? (
+    <Svg source={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 4" width="1" height="4"></svg>'} alt="" width={1} height={4} />
+  ) : null
+
   const Grande = (texto: string) => {
     if (!Svg) return null
     const n = numero(texto, COLOR.acento)
@@ -412,10 +409,11 @@ export function vista(t: ElementTable, d: Datos) {
     <Box flexDirection="row" flexWrap="nowrap" alignItems="stretch" gap={1}>
       {tiles.map(x => (
         <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1} width={`${80 / tiles.length}%`} flexGrow={1} flexShrink={1} minWidth={0}>
+          {aire}
           <Text size="caption" dimColor>
             {x.etiqueta}
           </Text>
-          <Box flexDirection="row" alignItems="flex-end" gap={1}>
+          <Box flexDirection="row" alignItems="flex-end">
             {Grande(x.valor)}
             {x.sub ? (
               <Text size="caption" dimColor tabular>
@@ -423,6 +421,7 @@ export function vista(t: ElementTable, d: Datos) {
               </Text>
             ) : null}
           </Box>
+          {aire}
         </Box>
       ))}
     </Box>
@@ -438,10 +437,6 @@ export function vista(t: ElementTable, d: Datos) {
     </Box>
   )
 
-  // Aire vertical de unos 4 px (el padding de VS Code va en líneas enteras).
-  const aire = Svg ? (
-    <Svg source={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 4" width="1" height="4"></svg>'} alt="" width={1} height={4} />
-  ) : null
 
   const card = (f: Fila) => {
     const tipoAvatar = f.clave === 'main' ? 'claude' : f.tipo
@@ -558,6 +553,7 @@ export function vista(t: ElementTable, d: Datos) {
           width={px - 16}
           height={6}
         />
+        {aire}
         <Box flexDirection="row" alignItems="center" flexWrap="wrap" columnGap={2}>
           {reparto.map(f => (
             <Text size="caption" tabular>
@@ -600,7 +596,6 @@ export function vista(t: ElementTable, d: Datos) {
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
         {roadmap}
-        <Svg source={LINEA} alt="" height={1} />
         {monitor}
       </Box>
     )
